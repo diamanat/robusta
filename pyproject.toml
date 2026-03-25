@@ -79,7 +79,10 @@ postgrest = "0.16.8"
 # Pin to fix cve https://github.com/robusta-dev/robusta/security/dependabot/85
 h2 = "^4.3.0" 
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.extras]
+all = ["Flask", "grafana-api", "watchdog", "better-exceptions", "CairoSVG", "tabulate", "kafka-python", "prometheus-api-client", "supabase", "datadog-api-client", "sentry-sdk", "poetry-core"]
+
+[tool.poetry.group.dev.dependencies]
 pre-commit = "^2.13.0"
 pytest = "^6.2.4"
 python-dotenv = "^0.18.0"
@@ -114,11 +117,6 @@ types-cachetools = "^5.2.1"
 types-PyYAML = "^6.0.0"
 types-toml = "^0.10.2"
 types-tabulate = "^0.8.10"
-
-[tool.poetry.extras]
-all = ["Flask", "grafana-api", "watchdog", "better-exceptions", "CairoSVG", "tabulate", "kafka-python", "prometheus-api-client", "supabase", "datadog-api-client", "sentry-sdk", "poetry-core"]
-
-[tool.poetry.group.dev.dependencies]
 sphinx-jinja = { git = "https://github.com/robusta-dev/sphinx-jinja.git" }
 sphinx-reredirects = "^0.1.1"
 freezegun = "^1.4.0"

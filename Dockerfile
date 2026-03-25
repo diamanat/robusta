@@ -1,5 +1,5 @@
 # Build stage
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 ENV PATH="/root/.local/bin/:$PATH"
 
 RUN apt-get update \
@@ -60,7 +60,7 @@ ENV ENV_TYPE=DEV
 ENV PYTHONUNBUFFERED=1
 ENV VIRTUAL_ENV=/app/venv
 ENV PATH="/venv/bin:$PATH"
-ENV PYTHONPATH=$PYTHONPATH:.:/app/src
+ENV PYTHONPATH=".:/app/src"
 
 WORKDIR /app
 
