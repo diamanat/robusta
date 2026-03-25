@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from robusta.api import FileBlock, Finding, MarkdownBlock, SlackSender, TableBlock
 from robusta.core.sinks.slack.slack_sink_params import SlackSinkParams
+from robusta.integrations.slack.message_state_store import InMemorySlackMessageStateStore
 from tests.config import CONFIG
 from tests.utils.slack_utils import SlackChannel
 
@@ -13,6 +14,62 @@ TEST_KEY = "test key"
 TEST_FILE_NAME = "test.txt"
 TEST_FILE_CONTENT = "test file content"
 TEST_FINDING_TITLE = "Test Text File Upload"
+
+
+def _reset_slack_sender_state():
+    SlackSender.verified_api_tokens.clear()
+    SlackSender.channel_name_to_id = {}
+    SlackSender.message_state_store = InMemorySlackMessageStateStore()
+
+
+def test_resolved_finding_updates_existing_message_when_enabled():
+    _reset_slack_sender_state()
+
+    with patch("robusta.integrations.slack.sender.WebClient") as mock_web_client:
+        mock_client = mock_web_client.return_value
+        mock_client.auth_test.return_value = {}
+        mock_client.chat_postMessage.return_value = {"ts": "111.222", "channel": "C123"}
+        mock_client.chat_update.return_value = {"ts": "111.222"}
+
+        slack_sender = SlackSender("token", TEST_ACCOUNT, TEST_CLUSTER, TEST_KEY, "alerts", registry=None)
+        slack_params = SlackSinkParams(
+            name="test_slack",
+            slack_channel="alerts",
+            api_key="",
+            update_existing_on_resolved=True,
+        )
+
+        firing = Finding(title="CPU high", aggregation_key="cpu_high", fingerprint="fp-1")
+        resolved = Finding(title="[RESOLVED] CPU high", aggregation_key="cpu_high", fingerprint="fp-1")
+
+        slack_sender.send_finding_to_slack(firing, slack_params, False)
+        slack_sender.send_finding_to_slack(resolved, slack_params, False)
+
+        assert mock_client.chat_postMessage.call_count == 1
+        assert mock_client.chat_update.call_count == 1
+        assert mock_client.chat_update.call_args.kwargs["channel"] == "C123"
+        assert mock_client.chat_update.call_args.kwargs["ts"] == "111.222"
+
+
+def test_resolved_finding_posts_new_message_when_updates_disabled():
+    _reset_slack_sender_state()
+
+    with patch("robusta.integrations.slack.sender.WebClient") as mock_web_client:
+        mock_client = mock_web_client.return_value
+        mock_client.auth_test.return_value = {}
+        mock_client.chat_postMessage.return_value = {"ts": "111.222", "channel": "C123"}
+
+        slack_sender = SlackSender("token", TEST_ACCOUNT, TEST_CLUSTER, TEST_KEY, "alerts", registry=None)
+        slack_params = SlackSinkParams(name="test_slack", slack_channel="alerts", api_key="")
+
+        firing = Finding(title="CPU high", aggregation_key="cpu_high", fingerprint="fp-1")
+        resolved = Finding(title="[RESOLVED] CPU high", aggregation_key="cpu_high", fingerprint="fp-1")
+
+        slack_sender.send_finding_to_slack(firing, slack_params, False)
+        slack_sender.send_finding_to_slack(resolved, slack_params, False)
+
+        assert mock_client.chat_postMessage.call_count == 2
+        assert mock_client.chat_update.call_count == 0
 
 
 def test_send_to_slack(slack_channel: SlackChannel):

@@ -12,6 +12,7 @@ class SlackSinkParams(SinkBaseParams):
     channel_override: Optional[str] = None
     max_log_file_limit_kb: int = 1000
     investigate_link: bool = True
+    update_existing_on_resolved: bool = False
     disable_holmes_note: bool = False
 
     @classmethod

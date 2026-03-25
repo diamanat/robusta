@@ -116,6 +116,14 @@ spec:
             value: {{ .Values.runner.certificate }}
           - name: IMAGE_REGISTRY
             value: {{ .Values.image.registry }}
+          - name: SLACK_RESOLVED_MESSAGE_STATE_BACKEND
+            value: {{ .Values.runner.slackResolvedMessageState.backend | quote }}
+          - name: SLACK_RESOLVED_MESSAGE_STATE_TTL_SECONDS
+            value: {{ .Values.runner.slackResolvedMessageState.ttlSeconds | quote }}
+          - name: SLACK_RESOLVED_MESSAGE_STATE_REDIS_URL
+            value: {{ .Values.runner.slackResolvedMessageState.redisUrl | quote }}
+          - name: SLACK_RESOLVED_MESSAGE_STATE_REDIS_PREFIX
+            value: {{ .Values.runner.slackResolvedMessageState.redisKeyPrefix | quote }}
           - name: CLUSTER_DOMAIN
             value: {{ .Values.global.clusterDomain }}
           - name: SET_KRR_SECURITY_CONTEXT

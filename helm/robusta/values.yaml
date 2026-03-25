@@ -740,6 +740,11 @@ runner:
   # Enable hardened filesystem security (read-only root filesystem with writable volume mounts)
   hardenedFs: false
   setKRRSecurityContext: false
+  slackResolvedMessageState:
+    backend: memory
+    ttlSeconds: 604800
+    redisUrl: ""
+    redisKeyPrefix: "robusta:slack-resolved-message-state:"
 # CRD permissions for common Kubernetes operators and tools
   crdPermissions:
     argo: true

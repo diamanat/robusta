@@ -49,6 +49,7 @@ from robusta.core.sinks.sink_base import KeyT
 from robusta.core.sinks.slack.slack_sink_params import SlackSinkParams
 from robusta.core.sinks.slack.preview.slack_sink_preview_params import SlackSinkPreviewParams
 from robusta.core.sinks.transformer import Transformer
+from robusta.integrations.slack.message_state_store import create_slack_message_state_store
 
 ACTION_TRIGGER_PLAYBOOK = "trigger_playbook"
 ACTION_LINK = "link"
@@ -60,6 +61,7 @@ MENTION_PATTERN = re.compile(r"<[^>]+>")
 class SlackSender:
     verified_api_tokens: Set[str] = set()
     channel_name_to_id = {}
+    message_state_store = create_slack_message_state_store()
 
     def __init__(self, slack_token: str, account_id: str, cluster_name: str, signing_key: str, slack_channel: str, registry, is_preview: bool = False, disable_holmes_note: bool = False):
         """
@@ -307,6 +309,21 @@ class SlackSender:
 
         return message, None
 
+    def __cache_sent_message(self, channel: str, fingerprint: str, channel_id: str, ts: str) -> None:
+        if not channel or not fingerprint or not channel_id or not ts:
+            return
+        self.message_state_store.set(channel, fingerprint, channel_id, ts)
+
+    def __get_cached_message(self, channel: str, fingerprint: str) -> Optional[Dict[str, str]]:
+        if not channel or not fingerprint:
+            return None
+        return self.message_state_store.get(channel, fingerprint)
+
+    def __delete_cached_message(self, channel: str, fingerprint: str) -> None:
+        if not channel or not fingerprint:
+            return
+        self.message_state_store.delete(channel, fingerprint)
+
     def __send_blocks_to_slack(
         self,
         report_blocks: List[BaseBlock],
@@ -317,7 +334,8 @@ class SlackSender:
         status: FindingStatus,
         channel: str,
         thread_ts: str = None,
-        output_blocks: Optional[List[SlackBlock]] = None
+        output_blocks: Optional[List[SlackBlock]] = None,
+        update_message: Optional[Dict[str, str]] = None,
     ) -> str:
         if output_blocks is None:
             output_blocks = []
@@ -353,24 +371,35 @@ class SlackSender:
         )
 
         try:
-            if thread_ts:
-                kwargs = {"thread_ts": thread_ts}
+            if update_message:
+                resp = self.slack_client.chat_update(
+                    channel=update_message["channel"],
+                    ts=update_message["ts"],
+                    text=message,
+                    blocks=output_blocks,
+                    attachments=(
+                        [{"color": status.to_color_hex(), "blocks": attachment_blocks}] if attachment_blocks else None
+                    ),
+                )
             else:
-                kwargs = {}
-            resp = self.slack_client.chat_postMessage(
-                channel=channel,
-                text=message,
-                blocks=output_blocks,
-                display_as_bot=True,
-                attachments=(
-                    [{"color": status.to_color_hex(), "blocks": attachment_blocks}] if attachment_blocks else None
-                ),
-                unfurl_links=unfurl,
-                unfurl_media=unfurl,
-                **kwargs,
-            )
-            # We will need channel ids for future message updates
-            self.channel_name_to_id[channel] = resp["channel"]
+                if thread_ts:
+                    kwargs = {"thread_ts": thread_ts}
+                else:
+                    kwargs = {}
+                resp = self.slack_client.chat_postMessage(
+                    channel=channel,
+                    text=message,
+                    blocks=output_blocks,
+                    display_as_bot=True,
+                    attachments=(
+                        [{"color": status.to_color_hex(), "blocks": attachment_blocks}] if attachment_blocks else None
+                    ),
+                    unfurl_links=unfurl,
+                    unfurl_media=unfurl,
+                    **kwargs,
+                )
+                # We will need channel ids for future message updates
+                self.channel_name_to_id[channel] = resp["channel"]
             return resp["ts"]
         except Exception as e:
             logging.error(
@@ -759,7 +788,12 @@ class SlackSender:
         if len(attachment_blocks):
             attachment_blocks.append(DividerBlock())
 
-        return self.__send_blocks_to_slack(
+        update_message = None
+        if sink_params.update_existing_on_resolved and thread_ts is None and finding.fingerprint:
+            if status == FindingStatus.RESOLVED:
+                update_message = self.__get_cached_message(slack_channel, finding.fingerprint)
+
+        message_ts = self.__send_blocks_to_slack(
             blocks,
             attachment_blocks,
             finding.title,
@@ -768,7 +802,15 @@ class SlackSender:
             status,
             slack_channel,
             thread_ts=thread_ts,
+            update_message=update_message,
         )
+        if sink_params.update_existing_on_resolved and thread_ts is None and finding.fingerprint and message_ts:
+            if status == FindingStatus.FIRING:
+                channel_id = self.channel_name_to_id.get(slack_channel, slack_channel)
+                self.__cache_sent_message(slack_channel, finding.fingerprint, channel_id, message_ts)
+            elif update_message:
+                self.__delete_cached_message(slack_channel, finding.fingerprint)
+        return message_ts
 
     def __send_finding_to_slack_preview(
         self,
